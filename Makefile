@@ -12,7 +12,7 @@ merge:
 	git -C ../ollama-webui checkout main && git merge upstream/main
 
 pull:
-	git pull -C ../ollama-webui myfork main
+	git -C ../ollama-webui pull myfork main
 
 up: pull
 	docker compose -f docker-compose-vllm.yaml up -d --build
