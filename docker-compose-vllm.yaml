@@ -19,43 +19,43 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              device_ids: ['0', '1', '2' ]
+              device_ids: ['1']
               capabilities:
                 - gpu
     networks:
       - ollama_net
 
-  # vllm:
-  #   container_name: vllm
-  #   image: vllm/vllm-openai:latest
-  #   pull_policy: always
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     - HF_TOKEN=${HUGGING_TOKEN}
-  #   ports:
-  #     - "8000:8000"
-  #   ipc: host
-  #   shm_size: '24gb'
-  #   #       --tensor-parallel-size 2
-  #   command: >
-  #     --host 0.0.0.0
-  #     --model TheBloke/dolphin-2.7-mixtral-8x7b-AWQ
-  #     --load-format safetensors
-  #     --trust-remote-code
-  #   volumes:
-  #     - /mnt/nas/hf_vllm_models/:/root/.cache/huggingface
-  #   runtime: nvidia
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             device_ids: ['0']
-  #             capabilities:
-  #               - gpu
-  #   networks:
-  #     - ollama_net
+  vllm:
+    container_name: vllm
+    image: vllm/vllm-openai:latest
+    pull_policy: always
+    env_file:
+      - .env
+    environment:
+      - HF_TOKEN=${HUGGING_TOKEN}
+    ports:
+      - "8000:8000"
+    ipc: host
+    shm_size: '24gb'
+    #       --tensor-parallel-size 2 --load-format safetensors
+    command: >
+      --host 0.0.0.0
+      --model TheBloke/dolphin-2.7-mixtral-8x7b-AWQ
+      # --tensor-parallel-size 2
+      --trust-remote-code
+    volumes:
+      - /mnt/nas/hf_vllm_models/:/root/.cache/huggingface
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['0']
+              capabilities:
+                - gpu
+    networks:
+      - ollama_net
 
   ollama-webui:
     build:
