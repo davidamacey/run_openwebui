@@ -109,7 +109,7 @@ Additional model services are available as commented-out blocks (see [Optional S
 | vllm-gptoss-120b | 8011 | ~96 GB | 131K | GPT-OSS 120B — text only, requires 2× A6000 |
 | vllm-llama32-11b-vision | 8015 | ~24 GB | 32K | Llama 3.2 11B — text + vision |
 | comfyui | 8188 | ~32 GB | — | Flux1-dev image generation |
-| ollama | 11434 | varies | varies | Fallback for models not supported by vLLM |
+| ollama | 11434 | varies | varies | Fallback for models not supported by vLLM (see `docker-compose.ollama.yaml` for standalone setup) |
 
 ---
 

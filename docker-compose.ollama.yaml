@@ -1,0 +1,20 @@
+services:
+  ollama:
+    image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
+    container_name: ollama
+    pull_policy: always
+    restart: always
+    tty: true
+    runtime: nvidia
+    ports:
+      - ${OLLAMA_WEBAPI_PORT-11434}:11434
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+    volumes:
+      - /mnt/nas/ollama_webui/ollama:/root/.ollama
+    networks:
+      - oi_net
+
+networks:
+  oi_net:
+    driver: bridge
