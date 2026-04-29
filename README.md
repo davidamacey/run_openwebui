@@ -5,12 +5,12 @@ Run AI models **100% locally** on your home server — no API keys, no cloud cos
 ## What You Get
 
 - **Gemma4 E4B** — Google's Gemma 4 4B multimodal model: text + vision (images) + audio, 128K context, served via vLLM
-- **Docling** — GPU-accelerated document/PDF extraction (replaces Apache Tika as the primary extractor)
-- **Apache Tika** — Document extraction fallback (stays running alongside Docling)
+- **Docling** — GPU-accelerated document/PDF extraction, primary extraction engine
+- **Apache Tika** — Lightweight CPU document extraction, fallback alongside Docling
 - **Open WebUI** — Chat interface with dark mode, conversation history, and model switching
 - **100% Private** — Everything runs locally; your data never leaves your server
 
-Additional services are available as commented-out blocks (see below).
+Additional model services are available as commented-out blocks (see [Optional Services](#optional-services-commented-out--uncomment-to-enable)).
 
 ## Hardware Requirements
 
@@ -30,14 +30,16 @@ Additional services are available as commented-out blocks (see below).
 
 ### Model VRAM Requirements
 
-| Model | VRAM | Notes |
-|-------|------|-------|
-| Gemma4 E4B BF16 | ~15 GB | 128K context; full vision + audio |
-| Gemma4 31B AWQ INT4 | ~20 GB | 64K context; vision broken under fp16 — see Known Issues |
-| GPT-OSS 20B | ~16 GB | Text only |
-| GPT-OSS 120B | ~96 GB | Requires 2× A6000 |
-| Llama 3.2 11B Vision | ~24 GB | |
-| Docling (GPU) | ~4 GB | CUDA 12.8 image, works with 13.0 driver |
+| Model | VRAM | Context | Modalities | Notes |
+|-------|------|---------|------------|-------|
+| Gemma4 E4B BF16 | ~15 GB | 128K | Text + vision + audio | Recommended — full multimodal |
+| Gemma4 31B AWQ INT4 | ~20 GB | ~11K | Text + vision | Limited context on single A6000; see [Known Issues](#known-issues) |
+| GPT-OSS 20B | ~16 GB | 131K | Text only | |
+| GPT-OSS 120B | ~96 GB | 131K | Text only | Requires 2× A6000 |
+| Llama 3.2 11B Vision | ~24 GB | 32K | Text + vision | |
+| Docling (GPU) | ~4 GB | — | — | CUDA 12.8 image, compatible with CUDA 13.0 driver |
+
+---
 
 ## Quick Start
 
@@ -50,12 +52,13 @@ Additional services are available as commented-out blocks (see below).
 2. **Create your `.env` file**
    ```bash
    cp .env.example .env
-   # Edit .env and fill in your HuggingFace token and a secret key
+   # Edit .env and fill in your values
    ```
-   - `HUGGING_TOKEN2`: Token from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
-   - Accept model terms at [huggingface.co/google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it)
+   - `HUGGING_TOKEN2`: Read token from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+   - `WEBUI_SECRET_KEY`: Any random string — used to sign Open WebUI sessions
+   - Accept model terms at [huggingface.co/google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it) before first start
 
-3. **Create required host directories**
+3. **Create required host directories** (model weights and compile caches live here)
    ```bash
    sudo mkdir -p /mnt/nas/hf_vllm_models
    sudo mkdir -p /mnt/nas/vllm_compile_cache
@@ -65,20 +68,26 @@ Additional services are available as commented-out blocks (see below).
    sudo mkdir -p /mnt/nas/gpt-oss-cache/nvrtc_cache
    sudo mkdir -p /mnt/nas/ollama_webui/webui
    ```
+   > These paths are defined in the `x-common-volumes` anchor in `docker-compose.yaml`. Adjust them to match your storage layout.
 
-4. **Adjust GPU assignments** in `docker-compose.yaml` to match your hardware:
+4. **Adjust GPU assignments** to match your hardware — change `CUDA_VISIBLE_DEVICES` in each service:
    ```yaml
-   CUDA_VISIBLE_DEVICES: "2"   # single GPU
-   CUDA_VISIBLE_DEVICES: "0,2" # multi-GPU (tensor parallel)
+   CUDA_VISIBLE_DEVICES: "0"   # single GPU
+   CUDA_VISIBLE_DEVICES: "0,1" # multi-GPU tensor parallel
    ```
 
 5. **Start services**
    ```bash
    docker compose up -d
    ```
+   First start downloads model weights (~8 GB for E4B). Monitor with:
+   ```bash
+   docker compose logs -f vllm-gemma4-e4b
+   ```
 
-6. **Access the interfaces**
-   - Open WebUI: `http://localhost:8010`
+6. **Access Open WebUI** at `http://localhost:8010`
+
+---
 
 ## Services
 
@@ -87,54 +96,131 @@ Additional services are available as commented-out blocks (see below).
 | Service | Port | Description |
 |---------|------|-------------|
 | Open WebUI | 8010 | Chat interface |
-| Apache Tika | 8009 | Document/PDF extraction (fallback) |
-| Docling | 5001 | GPU-accelerated document extraction (primary) |
 | vllm-gemma4-e4b | 8012 | Gemma4 4B — text + vision + audio, 128K context |
+| Docling | 5001 | GPU-accelerated document extraction (primary) |
+| Apache Tika | 8009 | CPU document extraction (fallback) |
 
-### Optional (Commented Out — Uncomment to Enable)
+### Optional Services (Commented Out — Uncomment to Enable)
 
-| Service | Port | VRAM | Description |
-|---------|------|------|-------------|
-| vllm-gemma4-31b | 8012 | ~20 GB | Gemma4 31B AWQ — text + vision (64K context; see Known Issues) |
-| vllm-gptoss-20b | 8012 | ~16 GB | GPT-OSS 20B text model |
-| vllm-gptoss-120b | 8011 | ~96 GB | GPT-OSS 120B (2× A6000) |
-| vllm-llama32-11b-vision | 8015 | ~24 GB | Llama 3.2 11B vision/text |
-| comfyui | 8188 | ~32 GB | Flux image generation |
-| ollama | 11434 | varies | Fallback for non-vLLM models |
+| Service | Port | VRAM | Context | Description |
+|---------|------|------|---------|-------------|
+| vllm-gemma4-31b | 8012 | ~20 GB | ~11K | Gemma4 31B AWQ INT4 — limited context on single GPU; see Known Issues |
+| vllm-gptoss-20b | 8012 | ~16 GB | 131K | GPT-OSS 20B — text only |
+| vllm-gptoss-120b | 8011 | ~96 GB | 131K | GPT-OSS 120B — text only, requires 2× A6000 |
+| vllm-llama32-11b-vision | 8015 | ~24 GB | 32K | Llama 3.2 11B — text + vision |
+| comfyui | 8188 | ~32 GB | — | Flux1-dev image generation |
+| ollama | 11434 | varies | varies | Fallback for models not supported by vLLM |
+
+---
 
 ## Switching Models
 
 Only one vLLM service should be active on a given GPU at a time. To switch:
 
 1. Comment out the current active service block (e.g., `vllm-gemma4-e4b`)
-2. Uncomment the target service block (e.g., `vllm-gemma4-31b`)
-3. Update `OPENAI_API_BASE_URL` in the `open-webui` environment to point to the new container name
-4. Run `docker compose up -d`
+2. Uncomment the target service block (e.g., `vllm-gptoss-20b`)
+3. Update `OPENAI_API_BASE_URL` in the `open-webui` environment to the new container name:
+   ```yaml
+   - OPENAI_API_BASE_URL=http://vllm-gptoss-20b:8000/v1
+   ```
+4. `docker compose up -d`
 
-## Document Extraction
+> **Important**: Gemma4 models require the `vllm/vllm-openai:gemma4-cu130` image, not `latest`. The `gemma4-cu130` tag is a Gemma4-specific vLLM build that includes the correct attention backend and chat template support. Using `latest` will fail or produce incorrect output.
 
-Docling is the primary extraction engine. It runs on GPU 1 (3080 Ti) and handles PDFs, images, and complex layouts with high accuracy. Apache Tika runs alongside it as a lightweight fallback.
+---
 
-In Open WebUI: **Admin → Settings → Documents** should show Docling as the active engine.
+## vLLM Configuration Reference
 
-The Docling image (`docling-serve-cu128`) bundles all OCR models — no separate download required.
+Each vLLM service passes flags to the `vllm serve` command. Here's what the key flags do and when to tune them:
+
+### Memory and context
+
+| Flag | Default in this repo | What it does |
+|------|---------------------|--------------|
+| `--max-model-len` | 131072 (E4B) | Maximum sequence length (prompt + output). Reduce if you get OOM on first load. |
+| `--gpu-memory-utilization` | 0.90 | Fraction of GPU VRAM allocated to vLLM. Reduce to leave room for other processes. |
+| `--max-num-seqs` | 8 (E4B) | Maximum concurrent requests. Reduce to lower memory usage at the cost of throughput. |
+| `--swap-space` | not set (E4B) | CPU RAM (GB) used to offload KV cache blocks when GPU is full. Set to 32 if you want longer queues. |
+
+### Reasoning and tool use
+
+| Flag | What it does |
+|------|--------------|
+| `--reasoning-parser gemma4` | Enables structured reasoning output (thinking tokens). Gemma4 uses `<start_of_turn>thinking` blocks. |
+| `--enable-auto-tool-choice` | Allows the model to call tools defined in the system prompt automatically. |
+| `--tool-call-parser gemma4` | Parses Gemma4's tool call format from the output stream. |
+
+These three flags together enable Open WebUI's tool/function calling features (web search, code execution, etc.). Remove them if you only need plain chat and want to reduce overhead.
+
+### Multimodal
+
+| Flag | What it does |
+|------|--------------|
+| `--limit-mm-per-prompt '{"image":4,"audio":1}'` | Maximum images and audio clips per request. E4B supports both; 31B supports images only. |
+| `--chat-template /vllm-workspace/examples/tool_chat_template_gemma4.jinja` | Gemma4-specific chat template that correctly inserts `<\|image\|>` and `<\|audio\|>` tokens. Required for multimodal input. |
+| `--dtype bfloat16` | Loads model weights in BF16. **Required for Gemma4** — see Known Issues. |
+
+### Performance
+
+| Flag | What it does |
+|------|--------------|
+| `--async-scheduling` | Enables async request scheduling for better throughput under concurrent load. |
+| `VLLM_ATTENTION_BACKEND: TRITON_ATTN_VLLM_V1` | Forces the Triton attention kernel. Required for Gemma4 due to its heterogeneous head dimensions (head_dim=256 / global_head_dim=512). |
+
+---
+
+## Document Extraction: Docling vs Tika
+
+Both services run simultaneously. Open WebUI uses Docling as the primary engine; Tika is available as a fallback.
+
+| | Docling | Apache Tika |
+|-|---------|-------------|
+| **Best for** | Complex PDFs, scanned documents, tables, multi-column layouts, diagrams | Plain text extraction, Office files, simple PDFs |
+| **Processing** | GPU-accelerated (ONNX vision models) | CPU only |
+| **Accuracy** | High — layout-aware, preserves structure | Lower on complex layouts |
+| **Speed** | Slower on first request (model warm-up) | Fast for simple documents |
+| **Models** | Bundled in the Docker image (no separate download) | None — rule-based extraction |
+| **Port** | 5001 | 8009 |
+
+### Configuring in Open WebUI
+
+After first start, go to **Admin Panel → Settings → Documents** and confirm:
+- Content Extraction Engine: **Docling**
+- Docling Server URL: `http://docling:5001`
+
+To fall back to Tika only, change the engine to **Tika** and set URL to `http://tika:9998`.
+
+### Using audio in Open WebUI (Gemma4 E4B)
+
+Gemma4 E4B supports audio input natively. To send audio:
+1. In Open WebUI, click the microphone/attachment icon in the chat input
+2. Upload or record an audio file (WAV, MP3, or M4A)
+3. The model receives it as a multimodal token — no transcription step needed
+
+> Open WebUI may also have its own STT (speech-to-text) pipeline configured separately. The audio token path above sends the raw audio directly to the model; the STT pipeline transcribes first and sends text. Both work with this setup.
+
+---
 
 ## Known Issues
 
 ### Gemma4 vision returns `<pad>` tokens under FP16 (vLLM issue #40290)
 
-**Symptom**: All image inputs return only `<pad>` tokens regardless of the image.
+**Symptom**: All image inputs return only `<pad>` tokens regardless of the image content.
 
-**Root cause**: Gemma4's SigLIP vision encoder is stored in BF16 in the checkpoint. When vLLM loads the model in FP16 (default), the standardize step in the vision tower overflows, producing degenerate embeddings.
+**Root cause**: Gemma4's SigLIP vision encoder is stored in BF16 in the model checkpoint. When vLLM loads the model in FP16 (its default), the standardize step in the vision tower overflows, producing degenerate embeddings that cause the LLM to output the pad token for every position.
 
-**Fix**: Always use `--dtype bfloat16` for any Gemma4 model served via vLLM. This applies to all sizes — E4B, 31B AWQ, etc. The `vllm-gemma4-e4b` service already includes this flag.
+**Fix**: Always use `--dtype bfloat16` for any Gemma4 model served via vLLM. This applies to all sizes — E4B, 31B AWQ, etc. The active `vllm-gemma4-e4b` service already includes this flag.
 
-The commented-out `vllm-gemma4-31b` block preserves the AWQ configuration. Note that the 31B AWQ model has this same vision bug AND is limited to ~11K context on a single A6000 due to KV memory pressure — the E4B model is the recommended replacement.
+**Gemma4 31B AWQ**: The commented-out `vllm-gemma4-31b` block is preserved for reference. Beyond the fp16 vision bug, the 31B AWQ model is also limited to ~11K context on a single 48 GB A6000 due to KV cache memory pressure after weights are loaded. The E4B model at 128K context is the recommended replacement.
+
+---
 
 ## Troubleshooting
 
-- **Out of Memory**: Reduce `--gpu-memory-utilization` or `--max-model-len`
-- **Model not loading**: Check that volume mounts under `/mnt/nas/` exist and are writable
-- **Connection refused**: Verify all services are on the `oi_net` Docker network
-- **Docling not processing PDFs**: Check `docker compose logs docling` — first run may take a minute to initialize
-- **Open WebUI not using Docling**: Go to Admin → Settings → Documents and confirm the engine is set to Docling
+- **OOM on startup**: Reduce `--max-model-len` or `--gpu-memory-utilization`. The E4B model at 128K context uses ~33 GB of KV cache headroom on a 48 GB GPU — reduce `--max-model-len` to 65536 to free ~16 GB.
+- **Model stuck downloading**: First start downloads ~8 GB (E4B) from HuggingFace. Check `docker compose logs -f vllm-gemma4-e4b`. Ensure `HUGGING_TOKEN2` is set and model terms are accepted.
+- **Connection refused on 8012**: vLLM takes 3–10 minutes on first start (compile cache is cold). Wait for `Application startup complete` in the logs.
+- **Docling slow on first PDF**: The ONNX vision models warm up on first use — subsequent requests are faster.
+- **Open WebUI not using Docling**: Go to Admin → Settings → Documents and verify the engine is set to Docling.
+- **Services can't reach each other**: All services must be on the `oi_net` network. Check with `docker network inspect run_openwebui_oi_net`.
+- **Wrong GPU used**: Verify `CUDA_VISIBLE_DEVICES` in each service. Use `CUDA_DEVICE_ORDER: PCI_BUS_ID` (already set in `x-common-env`) so GPU indices match `nvidia-smi` output.
