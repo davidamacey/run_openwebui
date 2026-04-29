@@ -56,9 +56,82 @@ services:
   #     - oi_net
 
   # 20B requires at least 16GB VRAM, running on one (1) A6000
-  vllm-gptoss-20b:
-    image: vllm/vllm-openai:gptoss
-    container_name: vllm-gptoss-20b
+  # Replaced by vllm-gemma4-31b below — uncomment to revert
+  # vllm-gptoss-20b:
+  #   image: vllm/vllm-openai:gptoss
+  #   container_name: vllm-gptoss-20b
+  #   pull_policy: always
+  #   restart: always
+  #   runtime: nvidia
+  #   shm_size: "64g"
+  #   ulimits: { memlock: -1, stack: 67108864 }
+  #   environment:
+  #     <<: *common_env
+  #     CUDA_VISIBLE_DEVICES: "2"
+  #     TORCHINDUCTOR_CACHE_DIR: "/root/.cache/torchinductor/gptoss-20b"
+  #     TORCH_EXTENSIONS_DIR: "/root/.cache/torch_extensions/gptoss-20b"
+  #     TRITON_CACHE_DIR: "/root/.triton/gptoss-20b"
+  #     CUDA_CACHE_PATH: "/root/.cache/nvrtc/gptoss-20b"
+  #   command: >
+  #     --model openai/gpt-oss-20b
+  #     --served-model-name gpt-oss-20b
+  #     --max-model-len 131000
+  #     --gpu-memory-utilization 0.95
+  #     --async-scheduling
+  #     --swap-space 32
+  #     --max-num-seqs 2
+  #   ports:
+  #     - 8012:8000
+  #   volumes: *common_volumes
+  #   networks:
+  #     - oi_net
+
+  # 31B AWQ INT4 — limited to ~11K context due to KV memory; vision broken
+  # under fp16 (vLLM issue #40290). Replaced by gemma4-e4b — uncomment to revert.
+  # vllm-gemma4-31b:
+  #   image: vllm/vllm-openai:gemma4-cu130
+  #   container_name: vllm-gemma4-31b
+  #   pull_policy: always
+  #   restart: always
+  #   runtime: nvidia
+  #   shm_size: "64g"
+  #   ulimits: { memlock: -1, stack: 67108864 }
+  #   environment:
+  #     <<: *common_env
+  #     CUDA_VISIBLE_DEVICES: "2"
+  #     HUGGING_FACE_HUB_TOKEN: "${HUGGING_TOKEN2}"
+  #     TORCHINDUCTOR_CACHE_DIR: "/root/.cache/torchinductor/gemma4-31b"
+  #     TORCH_EXTENSIONS_DIR: "/root/.cache/torch_extensions/gemma4-31b"
+  #     TRITON_CACHE_DIR: "/root/.triton/gemma4-31b"
+  #     CUDA_CACHE_PATH: "/root/.cache/nvrtc/gemma4-31b"
+  #   command: >
+  #     --model QuantTrio/gemma-4-31B-it-AWQ
+  #     --served-model-name gemma-4-31b
+  #     --quantization awq_marlin
+  #     --max-model-len 11000
+  #     --gpu-memory-utilization 0.95
+  #     --async-scheduling
+  #     --chat-template /vllm-workspace/examples/tool_chat_template_gemma4.jinja
+  #     --reasoning-parser gemma4
+  #     --enable-auto-tool-choice
+  #     --tool-call-parser gemma4
+  #     --limit-mm-per-prompt '{"image":4}'
+  #     --mm-processor-kwargs '{"max_soft_tokens":280}'
+  #     --max-num-batched-tokens 11000
+  #     --max-num-seqs 2
+  #   ports:
+  #     - 8012:8000
+  #   volumes: *common_volumes
+  #   networks:
+  #     - oi_net
+
+  # 4B native BF16 — fits on one A6000 (48GB GPU 2), 128K context
+  # Text + vision (image) + audio — full multimodal
+  # BF16 dtype avoids fp16 overflow in vision tower (vLLM issue #40290)
+  # Requires HuggingFace token and accepted terms for google/gemma-4-E4B-it
+  vllm-gemma4-e4b:
+    image: vllm/vllm-openai:gemma4-cu130
+    container_name: vllm-gemma4-e4b
     pull_policy: always
     restart: always
     runtime: nvidia
@@ -67,18 +140,24 @@ services:
     environment:
       <<: *common_env
       CUDA_VISIBLE_DEVICES: "2"
-      TORCHINDUCTOR_CACHE_DIR: "/root/.cache/torchinductor/gptoss-20b"
-      TORCH_EXTENSIONS_DIR: "/root/.cache/torch_extensions/gptoss-20b"
-      TRITON_CACHE_DIR: "/root/.triton/gptoss-20b"
-      CUDA_CACHE_PATH: "/root/.cache/nvrtc/gptoss-20b"
+      HUGGING_FACE_HUB_TOKEN: "${HUGGING_TOKEN2}"
+      TORCHINDUCTOR_CACHE_DIR: "/root/.cache/torchinductor/gemma4-e4b"
+      TORCH_EXTENSIONS_DIR: "/root/.cache/torch_extensions/gemma4-e4b"
+      TRITON_CACHE_DIR: "/root/.triton/gemma4-e4b"
+      CUDA_CACHE_PATH: "/root/.cache/nvrtc/gemma4-e4b"
     command: >
-      --model openai/gpt-oss-20b
-      --served-model-name gpt-oss-20b
-      --max-model-len 131000
-      --gpu-memory-utilization 0.95
+      --model google/gemma-4-E4B-it
+      --served-model-name gemma-4-e4b
+      --dtype bfloat16
+      --max-model-len 131072
+      --gpu-memory-utilization 0.90
       --async-scheduling
-      --swap-space 32
-      --max-num-seqs 2
+      --chat-template /vllm-workspace/examples/tool_chat_template_gemma4.jinja
+      --reasoning-parser gemma4
+      --enable-auto-tool-choice
+      --tool-call-parser gemma4
+      --limit-mm-per-prompt '{"image":4,"audio":1}'
+      --max-num-seqs 8
     ports:
       - 8012:8000
     volumes: *common_volumes
@@ -113,31 +192,31 @@ services:
   #######################################
   ##### ComfyUI Model - Image Generation
   #######################################
-  comfyui:
-    container_name: comfyui
-    image: frefrik/comfyui-flux:cu124
-    pull_policy: always
-    restart: unless-stopped
-    runtime: nvidia
-    ports:
-      - "8188:8188"
-    volumes:
-      - /mnt/nas/hf_comfyui_models/:/app
-    environment:
-      - CLI_ARGS=
-      - HF_TOKEN=${HUGGING_TOKEN2}
-      - LOW_VRAM=${LOW_VRAM:-false}
-      - CUDA_VISIBLE_DEVICES=0
-      - MODELS_DOWNLOAD="dev"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: [ '0' ]
-              capabilities: [ gpu ]
-    networks:
-      - oi_net
+  # comfyui:
+  #   container_name: comfyui
+  #   image: frefrik/comfyui-flux:cu124
+  #   pull_policy: always
+  #   restart: unless-stopped
+  #   runtime: nvidia
+  #   ports:
+  #     - "8188:8188"
+  #   volumes:
+  #     - /mnt/nas/hf_comfyui_models/:/app
+  #   environment:
+  #     - CLI_ARGS=
+  #     - HF_TOKEN=${HUGGING_TOKEN2}
+  #     - LOW_VRAM=${LOW_VRAM:-false}
+  #     - CUDA_VISIBLE_DEVICES=0
+  #     - MODELS_DOWNLOAD="dev"
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             device_ids: [ '0' ]
+  #             capabilities: [ gpu ]
+  #   networks:
+  #     - oi_net
 
   #######################################
   ##### Ollama - Non-Compatible vLLM Models
@@ -165,6 +244,24 @@ services:
   #     - oi_net
 
   #######################################
+  ##### Docling - Document Extraction (GPU-accelerated, 3080Ti)
+  #######################################
+  docling:
+    image: quay.io/docling-project/docling-serve-cu128
+    container_name: docling
+    restart: always
+    runtime: nvidia
+    ports:
+      - "5001:5001"
+    environment:
+      - CUDA_VISIBLE_DEVICES=1
+      - UVICORN_WORKERS=1
+      - DOCLING_SERVE_ENABLE_UI=true
+      - DOCLING_SERVE_MAX_SYNC_WAIT=120
+    networks:
+      - oi_net
+
+  #######################################
   ##### Apache Tika - Document/OCR Extraction
   #######################################
   tika:
@@ -188,15 +285,16 @@ services:
     ports:
       - 8010:8080
     environment:
-      - WEBUI_SECRET_KEY=""
-      - CONTENT_EXTRACTION_ENGINE=tika
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:-}
+      - CONTENT_EXTRACTION_ENGINE=docling
+      - DOCLING_SERVER_URL=http://docling:5001
       - ENABLE_IMAGE_GENERATION=True
       - IMAGE_GENERATION_ENGINE=comfyui
       - COMFYUI_BASE_URL=http://comfyui:8188
       - IMAGE_SIZE=1024x1024
       - IMAGE_STEPS=20
-      - OPENAI_API_BASE_URL=http://vllm-gptoss-120b:8000/v1;http://vllm-gptoss-20b:8000/v1
-      - OPENAI_API_KEY=EMPTY;EMPTY
+      - OPENAI_API_BASE_URL=http://vllm-gemma4-e4b:8000/v1
+      - OPENAI_API_KEY=EMPTY
     networks:
       - oi_net
 

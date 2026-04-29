@@ -1,47 +1,43 @@
-# 🚀 Open WebUI with Local AI Models
+# Open WebUI with Local AI Models
 
-Run ChatGPT-quality AI models **100% locally** on your home server - no API keys, no cloud costs, no data leaving your network. This Docker Compose setup gives you a production-ready AI stack with a beautiful web interface.
+Run AI models **100% locally** on your home server — no API keys, no cloud costs, no data leaving your network. This Docker Compose setup gives you a production-ready AI stack with a beautiful web interface.
 
-## ✨ What You Get
+## What You Get
 
-- 🤖 **GPT-OSS Models** - OpenAI's powerful open-source language models (20B & 120B parameters)
-- 🎨 **Flux Image Generation** - State-of-the-art text-to-image with ComfyUI
-- 📄 **Document Intelligence** - Extract and chat with PDFs, images, and documents via Apache Tika
-- 💬 **Beautiful Chat Interface** - Open WebUI with dark mode, conversation history, and model switching
-- 🔒 **100% Private** - Everything runs locally, your data never leaves your server
-- ⚡ **Hardware Flexible** - Modular configuration adapts to your GPU setup
+- **Gemma4 E4B** — Google's Gemma 4 4B multimodal model: text + vision (images) + audio, 128K context, served via vLLM
+- **Docling** — GPU-accelerated document/PDF extraction (replaces Apache Tika as the primary extractor)
+- **Apache Tika** — Document extraction fallback (stays running alongside Docling)
+- **Open WebUI** — Chat interface with dark mode, conversation history, and model switching
+- **100% Private** — Everything runs locally; your data never leaves your server
 
-## Overview
-
-This repository provides a plug-and-play Docker Compose configuration designed for home servers with NVIDIA GPUs. All services are pre-configured but commented out by default - simply uncomment what your hardware supports and deploy!
+Additional services are available as commented-out blocks (see below).
 
 ## Hardware Requirements
 
+### Reference Setup (this repo's active configuration)
+
+| GPU | Model | VRAM | Role |
+|-----|-------|------|------|
+| GPU 0 | RTX A6000 | 48 GB | Reserved / testing |
+| GPU 1 | RTX 3080 Ti | 12 GB | Docling (GPU-accelerated OCR) |
+| GPU 2 | RTX A6000 | 48 GB | vLLM — Gemma4 E4B (128K context) |
+
 ### Minimum Requirements
-- NVIDIA GPU with at least 16GB VRAM
-- 32GB system RAM
-- Docker with NVIDIA Container Toolkit
+
+- NVIDIA GPU with at least 8 GB VRAM (for Gemma4 E4B in BF16)
+- 32 GB system RAM
+- Docker with NVIDIA Container Toolkit installed
 
 ### Model VRAM Requirements
-- **GPT-OSS-20B**: ~16GB VRAM (1x A6000 or similar)
-- **GPT-OSS-120B**: ~96GB VRAM (2x A6000)
-- **Llama-3.2-11B-Vision**: ~24GB VRAM
-- **ComfyUI Flux**: ~32GB VRAM
 
-## 📋 Example Deployments
-
-### Single A6000 (48GB)  
-- **Enable**: Open WebUI, Tika, GPT-OSS-20B
-- **Result**: Text generation with 20B model
-
-### Dual A6000 (96GB) - Option 1
-- **Enable**: Open WebUI, Tika, GPT-OSS-120B
-- **Result**: Advanced text generation with 120B model
-
-### Dual A6000 (96GB) - Option 2
-- **Enable**: Open WebUI, Tika, GPT-OSS-20B, ComfyUI
-- **GPU Assignment**: GPU 0 for ComfyUI, GPU 2 for GPT-OSS-20B
-- **Result**: Full text + image generation stack
+| Model | VRAM | Notes |
+|-------|------|-------|
+| Gemma4 E4B BF16 | ~15 GB | 128K context; full vision + audio |
+| Gemma4 31B AWQ INT4 | ~20 GB | 64K context; vision broken under fp16 — see Known Issues |
+| GPT-OSS 20B | ~16 GB | Text only |
+| GPT-OSS 120B | ~96 GB | Requires 2× A6000 |
+| Llama 3.2 11B Vision | ~24 GB | |
+| Docling (GPU) | ~4 GB | CUDA 12.8 image, works with 13.0 driver |
 
 ## Quick Start
 
@@ -51,96 +47,94 @@ This repository provides a plug-and-play Docker Compose configuration designed f
    cd run_openwebui
    ```
 
-2. **Create .env file for Hugging Face token**
+2. **Create your `.env` file**
    ```bash
-   echo "HUGGING_TOKEN2=your_hf_token_here" > .env
+   cp .env.example .env
+   # Edit .env and fill in your HuggingFace token and a secret key
    ```
-   > 📝 Get your token from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) - required for ComfyUI model downloads
+   - `HUGGING_TOKEN2`: Token from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+   - Accept model terms at [huggingface.co/google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it)
 
-3. **Configure your models**
-   
-   Edit `docker-compose.yaml` and uncomment the services your hardware supports based on the example deployments above
-
-4. **Set GPU visibility**
-   
-   Adjust `CUDA_VISIBLE_DEVICES` in each service to match your GPU IDs:
-   ```yaml
-   environment:
-     CUDA_VISIBLE_DEVICES: "0"  # Single GPU
-     # CUDA_VISIBLE_DEVICES: "0,1"  # Multi-GPU
-   ```
-
-5. **Create required directories**
+3. **Create required host directories**
    ```bash
    sudo mkdir -p /mnt/nas/hf_vllm_models
+   sudo mkdir -p /mnt/nas/vllm_compile_cache
+   sudo mkdir -p /mnt/nas/gpt-oss-cache/torchinductor
+   sudo mkdir -p /mnt/nas/gpt-oss-cache/torch_extensions
+   sudo mkdir -p /mnt/nas/gpt-oss-cache/triton_cache
+   sudo mkdir -p /mnt/nas/gpt-oss-cache/nvrtc_cache
    sudo mkdir -p /mnt/nas/ollama_webui/webui
-   sudo mkdir -p /mnt/nas/hf_comfyui_models
    ```
 
-6. **Start services**
+4. **Adjust GPU assignments** in `docker-compose.yaml` to match your hardware:
+   ```yaml
+   CUDA_VISIBLE_DEVICES: "2"   # single GPU
+   CUDA_VISIBLE_DEVICES: "0,2" # multi-GPU (tensor parallel)
+   ```
+
+5. **Start services**
    ```bash
    docker compose up -d
    ```
 
-7. **Access the interfaces**
-   - **Open WebUI**: `http://localhost:8010`
-   - **ComfyUI**: `http://localhost:8188` (if enabled)
+6. **Access the interfaces**
+   - Open WebUI: `http://localhost:8010`
 
 ## Services
 
-### Core Services (Always Enabled)
-- **Open WebUI** (port 8010): Chat interface for all models
-- **Apache Tika** (port 8009): Document/PDF extraction and OCR
+### Always Active
 
-### Optional Model Services (Uncomment as Needed)
+| Service | Port | Description |
+|---------|------|-------------|
+| Open WebUI | 8010 | Chat interface |
+| Apache Tika | 8009 | Document/PDF extraction (fallback) |
+| Docling | 5001 | GPU-accelerated document extraction (primary) |
+| vllm-gemma4-e4b | 8012 | Gemma4 4B — text + vision + audio, 128K context |
 
-#### Text Generation
-- **vLLM GPT-OSS-20B** (port 8012): 20B parameter model for general text
-- **vLLM GPT-OSS-120B** (port 8011): 120B parameter model for advanced tasks
-- **vLLM Llama-3.2-11B-Vision** (port 8015): Multimodal vision/text model
+### Optional (Commented Out — Uncomment to Enable)
 
-#### Image Generation  
-- **ComfyUI** (port 8188): Flux1-dev image generation
+| Service | Port | VRAM | Description |
+|---------|------|------|-------------|
+| vllm-gemma4-31b | 8012 | ~20 GB | Gemma4 31B AWQ — text + vision (64K context; see Known Issues) |
+| vllm-gptoss-20b | 8012 | ~16 GB | GPT-OSS 20B text model |
+| vllm-gptoss-120b | 8011 | ~96 GB | GPT-OSS 120B (2× A6000) |
+| vllm-llama32-11b-vision | 8015 | ~24 GB | Llama 3.2 11B vision/text |
+| comfyui | 8188 | ~32 GB | Flux image generation |
+| ollama | 11434 | varies | Fallback for non-vLLM models |
 
-#### Fallback Models
-- **Ollama** (port 11434): For models not compatible with vLLM
+## Switching Models
 
-## Configuration Tips
+Only one vLLM service should be active on a given GPU at a time. To switch:
 
-### Selecting Models
-Models are commented out to prevent deployment failures on systems with insufficient VRAM. Uncomment only the services your GPU(s) can handle:
+1. Comment out the current active service block (e.g., `vllm-gemma4-e4b`)
+2. Uncomment the target service block (e.g., `vllm-gemma4-31b`)
+3. Update `OPENAI_API_BASE_URL` in the `open-webui` environment to point to the new container name
+4. Run `docker compose up -d`
 
-```yaml
-# Uncomment the services you want to enable:
-services:
-  # vllm-gptoss-120b:  # Requires 2x A6000
-  vllm-gptoss-20b:     # Requires 1x A6000  
-  # comfyui:           # Requires 32GB+ VRAM
-```
+## Document Extraction
 
-### GPU Assignment
-When running multiple services, assign different GPUs to avoid conflicts:
+Docling is the primary extraction engine. It runs on GPU 1 (3080 Ti) and handles PDFs, images, and complex layouts with high accuracy. Apache Tika runs alongside it as a lightweight fallback.
 
-```yaml
-# Service 1 on GPU 0
-CUDA_VISIBLE_DEVICES: "0"
+In Open WebUI: **Admin → Settings → Documents** should show Docling as the active engine.
 
-# Service 2 on GPU 1  
-CUDA_VISIBLE_DEVICES: "1"
+The Docling image (`docling-serve-cu128`) bundles all OCR models — no separate download required.
 
-# Service using multiple GPUs
-CUDA_VISIBLE_DEVICES: "0,2"
-```
+## Known Issues
 
-### Memory Optimization
-For limited VRAM, adjust these parameters:
-- `--gpu-memory-utilization`: Reduce from 0.95 to 0.90
-- `--max-num-seqs`: Reduce concurrent requests
-- `LOW_VRAM=true`: Enable for ComfyUI on <16GB cards
+### Gemma4 vision returns `<pad>` tokens under FP16 (vLLM issue #40290)
+
+**Symptom**: All image inputs return only `<pad>` tokens regardless of the image.
+
+**Root cause**: Gemma4's SigLIP vision encoder is stored in BF16 in the checkpoint. When vLLM loads the model in FP16 (default), the standardize step in the vision tower overflows, producing degenerate embeddings.
+
+**Fix**: Always use `--dtype bfloat16` for any Gemma4 model served via vLLM. This applies to all sizes — E4B, 31B AWQ, etc. The `vllm-gemma4-e4b` service already includes this flag.
+
+The commented-out `vllm-gemma4-31b` block preserves the AWQ configuration. Note that the 31B AWQ model has this same vision bug AND is limited to ~11K context on a single A6000 due to KV memory pressure — the E4B model is the recommended replacement.
 
 ## Troubleshooting
 
-- **Out of Memory**: Reduce `--max-model-len` or disable concurrent services
-- **Models not loading**: Check volume mounts and ensure model files are downloaded
-- **Connection refused**: Verify services are on the same Docker network (`oi_net`)
-- **ComfyUI model download fails**: Ensure your Hugging Face token is set correctly in `.env`
+- **Out of Memory**: Reduce `--gpu-memory-utilization` or `--max-model-len`
+- **Model not loading**: Check that volume mounts under `/mnt/nas/` exist and are writable
+- **Connection refused**: Verify all services are on the `oi_net` Docker network
+- **Docling not processing PDFs**: Check `docker compose logs docling` — first run may take a minute to initialize
+- **Open WebUI not using Docling**: Go to Admin → Settings → Documents and confirm the engine is set to Docling
